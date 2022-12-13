@@ -11,7 +11,7 @@ impl SimdString {
         Self { s }
     }
 
-    pub fn trim_start<'a>(&'a self) -> &'a str {
+    pub fn trim_start_matches<'a>(&'a self, c: char) -> &'a str {
         let len = self.s.len();
         // TODO: support the string with length doesn't align to 8
         if (len < 8) || (len & 0x7 != 0) {
@@ -23,7 +23,7 @@ impl SimdString {
         let mut i = 0;
         unsafe {
             while i < len {
-                let spaces = _mm_set1_epi8(' ' as u8 as i8);
+                let spaces = _mm_set1_epi8(c as u8 as i8);
                 let x = _mm_loadu_si128(src.as_ptr().offset(i as isize) as *const _);
 
                 /* Compare each char with space, set bit 1 on the corresponding
@@ -43,6 +43,10 @@ impl SimdString {
 
             self.s.get_unchecked(pos..len)
         }
+    }
+
+    pub fn trim_start(&self) -> &str {
+        self.trim_start_matches(' ')
     }
 }
 
