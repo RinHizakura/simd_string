@@ -44,7 +44,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse() {
+    fn test_parse_u64() {
         let test_strs = vec![
             "1234",
             "1234567812345678",
@@ -58,6 +58,25 @@ mod tests {
             let s2 = s.to_simd_string();
             let s1 = s1.parse::<u64>();
             let s2 = s2.parse::<u64>();
+            assert_eq!(s1, s2);
+        }
+    }
+
+    #[test]
+    fn test_parse_i64() {
+        let test_strs = vec![
+            "1234",
+            "1234567812345678",
+            "9876543200000000",
+            "19876543200000000",
+            "1987654320000000@",
+            "-1987654320000000",
+        ];
+        for s in test_strs {
+            let s1 = s.to_string();
+            let s2 = s.to_simd_string();
+            let s1 = s1.parse::<i64>();
+            let s2 = s2.parse::<i64>();
             assert_eq!(s1, s2);
         }
     }
