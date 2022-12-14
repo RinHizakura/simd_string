@@ -126,6 +126,20 @@ trait FromStrRadixHelper:
     fn from_u64(u: u64) -> Self;
 }
 
+/* It doesn't make sence to do parsing with SIMD for those short interger.
+ * Let's just use the default parse method for them. */
+macro_rules! from_str_radix_int_impl_fake {
+    ($($t:ty)*) => {$(
+        impl FromSimdString for $t {
+            type Err = ParseIntError;
+            fn from_str(s: &SimdString) -> Result<Self, ParseIntError> {
+                s.s.parse::<$t>()
+            }
+        }
+    )*}
+}
+from_str_radix_int_impl_fake! { i8 i16 i32 u8 u16 u32 }
+
 macro_rules! from_str_radix_int_impl {
     ($($t:ty)*) => {$(
         impl FromSimdString for $t {
@@ -136,8 +150,7 @@ macro_rules! from_str_radix_int_impl {
         }
     )*}
 }
-
-from_str_radix_int_impl! { isize i8 i16 i32 i64 i128 usize u8 u16 u32 u64 u128 }
+from_str_radix_int_impl! { isize i64 i128 usize u64 u128 }
 
 macro_rules! impl_helper_for {
     ($($t:ty)*) => ($(impl FromStrRadixHelper for $t {
@@ -146,4 +159,4 @@ macro_rules! impl_helper_for {
         fn from_u64(u: u64) -> Self { u as Self }
     })*)
 }
-impl_helper_for! { i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize }
+impl_helper_for! { isize i64 i128 usize u64 u128 }
