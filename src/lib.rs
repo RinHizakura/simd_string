@@ -45,7 +45,14 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        let test_strs = vec!["1234567812345678", "9876543200000000"];
+        let test_strs = vec![
+            "1234",
+            "1234567812345678",
+            "9876543200000000",
+            "19876543200000000",
+            "1987654320000000@",
+            "@1987654320000000",
+        ];
         for s in test_strs {
             let s1 = s.to_string();
             let s2 = s.to_simd_string();

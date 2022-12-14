@@ -1,3 +1,4 @@
+use crate::align_down;
 use crate::string::SimdString;
 use std::arch::x86_64::*;
 use std::num::ParseIntError;
@@ -25,15 +26,20 @@ impl FromSimdString for u64 {
     fn from_str(s: &SimdString) -> Result<Self, Self::Err> {
         // TODO: consider sign for the number
         let len = s.s.len();
-        // TODO: support the string with length doesn't align to 16
-        if (len < 16) || (len & 0xf != 0) {
-            panic!("len = {} is not supported now", len);
+
+        let len0 = align_down!(len, 16);
+        let len1 = len - len0;
+
+        // use default parse for the remaining bytes
+        let mut result1 = 0;
+        if len1 > 0 {
+            result1 = s.s[len0..len].parse::<u64>()?;
         }
 
-        let mut result = 0;
+        let mut result0 = 0;
         let src: &[u8] = s.s.as_bytes();
         unsafe {
-            for i in (0..len).step_by(16) {
+            for i in (0..len0).step_by(16) {
                 let x = _mm_loadu_si128(src.as_ptr().offset(i as isize) as *const _);
 
                 /* Make '0'..'9' become 0..9, otherwise the char will become garbage
@@ -79,12 +85,13 @@ impl FromSimdString for u64 {
 
                 /* Obtain the lowest 64bit and convert to the final result */
                 let as_u64 = _mm_cvtsi128_si64(x) as u64;
-                result += (as_u64 >> 32) + 1_0000_0000 * (as_u64 & 0xffff_ffff);
+                result0 += (as_u64 >> 32) + 1_0000_0000 * (as_u64 & 0xffff_ffff);
                 // TODO
                 break;
             }
 
-            return Ok(result);
+            // TODO: handle possible overflow
+            return Ok(result0 * 10_u64.pow(len1 as u32) + result1);
         }
     }
 }
