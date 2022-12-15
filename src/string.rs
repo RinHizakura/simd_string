@@ -8,7 +8,7 @@ use std::arch::x86_64::*;
  * */
 pub struct SimdString {
     /* FIXME: Would it be better to own the slice instead of the String? */
-    pub s: String,
+    pub(crate) s: String,
 }
 
 impl SimdString {

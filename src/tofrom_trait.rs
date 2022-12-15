@@ -23,7 +23,7 @@ pub trait FromSimdString: Sized {
 
 fn from_simd_str_radix<T>(s: &SimdString, radix: u32) -> Result<T, ParseIntError>
 where
-    T: FromStrRadixHelper + std::str::FromStr<Err = ParseIntError>,
+    T: FromStrRadixHelper + std::str::FromStr<Err = ParseIntError> + std::fmt::Display,
 {
     //TODO
     assert_eq!(radix, 10);
@@ -48,73 +48,86 @@ where
     let len0 = align_down!(len - start, 16);
     let len1 = len - start - len0;
 
-    // use default parse for the remaining bytes
-    let mut result1: T = T::from_u64(0);
-    if len1 > 0 {
-        result1 = s.s[start + len0..len].parse::<T>()?;
-    }
-
-    let mut result0 = T::from_u64(0);
-    unsafe {
-        for i in (0..len0 - start).step_by(16) {
-            let x = _mm_loadu_si128(src.as_ptr().offset(i as isize) as *const _);
-
-            /* Make '0'..'9' become 0..9, otherwise the char will become garbage
-             * which could be checked then. */
-            let ch_zeros = _mm_set1_epi8('0' as i8);
-            let x = _mm_sub_epi8(x, ch_zeros);
-
-            /* For every packed u8 integers, check whether it is less equal to 9
-             *
-             * FIXME: It looks like that we don't have stable API like
-             * _mm_cmplt_epu8 or _mm_cmpgt_epu8 now. Instead, we complete
-             * the similar behavior by:
-             * 1. For each u8 number, doing max(number, 9)
-             * 2. If this is a valid number, all numbers should equal to 9 */
-            let nines = _mm_set1_epi8(9);
-            let max_of_nine = _mm_max_epu8(x, nines);
-            let is_eq_nine = _mm_cmpeq_epi8(nines, max_of_nine);
-            if _mm_test_all_ones(is_eq_nine) == 0 {
-                /* FIXME: Fallback to normal parse even if we know that it
-                 * should be error. We do this because there's no way to create
-                 * our own ParseIntError. */
-                return s.s.parse::<T>();
+    let result;
+    macro_rules! run_from_str {
+        ($op: ident, $overflow_err:expr) => {
+            // use default parse for the remaining bytes
+            let mut result1: u64 = 0;
+            if len1 > 0 {
+                // Since the source string length of result1 must <= 15, it will suit u64
+                result1 = s.s[start + len0..len].parse::<u64>()?;
             }
+            let mut result0 = T::from_u64(0);
+            unsafe {
+                for i in (0..len0 - start).step_by(16) {
+                    let x = _mm_loadu_si128(src.as_ptr().offset(i as isize) as *const _);
 
-            /* Compute the final result with multiply-add */
-            /* x 16x8 -> 8x16 */
-            let mul_1_10 = _mm_setr_epi8(10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1);
-            let x = _mm_maddubs_epi16(x, mul_1_10);
+                    /* Make '0'..'9' become 0..9, otherwise the char will become garbage
+                     * which could be checked then. */
+                    let ch_zeros = _mm_set1_epi8('0' as i8);
+                    let x = _mm_sub_epi8(x, ch_zeros);
 
-            /* x 8x16 -> 4x32 */
-            let mul_1_100 = _mm_setr_epi16(100, 1, 100, 1, 100, 1, 100, 1);
-            let x = _mm_madd_epi16(x, mul_1_100);
+                    /* For every packed u8 integers, check whether it is less equal to 9
+                     *
+                     * FIXME: It looks like that we don't have stable API like
+                     * _mm_cmplt_epu8 or _mm_cmpgt_epu8 now. Instead, we complete
+                     * the similar behavior by:
+                     * 1. For each u8 number, doing max(number, 9)
+                     * 2. If this is a valid number, all numbers should equal to 9 */
+                    let nines = _mm_set1_epi8(9);
+                    let max_of_nine = _mm_max_epu8(x, nines);
+                    let is_eq_nine = _mm_cmpeq_epi8(nines, max_of_nine);
+                    if _mm_test_all_ones(is_eq_nine) == 0 {
+                        /* FIXME: awkward way to produce ParseIntError { InvalidDigit }
+                         * Because there's no way to create our own ParseIntError. */
+                        return "Z".parse::<T>();
+                    }
 
-            /* We don't have multiply add from 4x32 to 2x64. However, for each
-             * packed 32 bit interger, they won't be larger than 2^16
-             * (because 100 * (9 * 10 + 9) + (9 * 10 + 9) = 9999), so we can put
-             * 4x32 into 16x8 and use _mm_madd_epi16. */
-            let x = _mm_packs_epi32(x, x);
-            /* x 4x32 -> 2x128 */
-            let mul_1_10000 = _mm_setr_epi16(10000, 1, 10000, 1, 10000, 1, 10000, 1);
-            let x = _mm_madd_epi16(x, mul_1_10000);
+                    /* Compute the final result with multiply-add */
+                    /* x 16x8 -> 8x16 */
+                    let mul_1_10 =
+                        _mm_setr_epi8(10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1);
+                    let x = _mm_maddubs_epi16(x, mul_1_10);
 
-            /* Obtain the lowest 64bit and convert to the final result */
-            let as_u64 = _mm_cvtsi128_si64(x) as u64;
+                    /* x 8x16 -> 4x32 */
+                    let mul_1_100 = _mm_setr_epi16(100, 1, 100, 1, 100, 1, 100, 1);
+                    let x = _mm_madd_epi16(x, mul_1_100);
 
-            // TODO: handle possible overflow
-            let r = (as_u64 >> 32) + 1_0000_0000 * (as_u64 & 0xffff_ffff);
-            result0 = result0 + T::from_u64(r);
-            // TODO: don't break
-            break;
-        }
+                    /* We don't have multiply add from 4x32 to 2x64. However, for each
+                     * packed 32 bit interger, they won't be larger than 2^16
+                     * (because 100 * (9 * 10 + 9) + (9 * 10 + 9) = 9999), so we can put
+                     * 4x32 into 16x8 and use _mm_madd_epi16. */
+                    let x = _mm_packs_epi32(x, x);
+                    /* x 4x32 -> 2x128 */
+                    let mul_1_10000 = _mm_setr_epi16(10000, 1, 10000, 1, 10000, 1, 10000, 1);
+                    let x = _mm_madd_epi16(x, mul_1_10000);
+
+                    /* Obtain the lowest 64bit and convert to the final result */
+                    let as_u64 = _mm_cvtsi128_si64(x) as u64;
+
+                    result0 = result0
+                        .checked_mul(1_0000_0000_0000_0000)
+                        .ok_or_else($overflow_err)?;
+                    let n = (as_u64 >> 32) + 1_0000_0000 * (as_u64 & 0xffff_ffff);
+                    result0 = T::$op(&result0, n).ok_or_else($overflow_err)?;
+                }
+            }
+            let n = result0
+                .checked_mul(10_u64.pow(len1 as u32))
+                .ok_or_else($overflow_err)?;
+            result = T::$op(&n, result1).ok_or_else($overflow_err)?;
+        };
     }
 
-    // TODO: handle possible overflow
-    let mut result = result0 * T::from_u64(10_u64.pow(len1 as u32)) + result1;
-    if !is_positive {
-        result = T::from_u64(u64::MAX) * result;
+    /* FIXME: awkward way to produce ParseIntError { PosOverflow } and
+     * ParseIntError { NegOverflow }. Because there's no way to create
+     * our own ParseIntError. */
+    if is_positive {
+        run_from_str!(checked_add, || "256".parse::<u8>().unwrap_err());
+    } else {
+        run_from_str!(checked_sub, || "-129".parse::<i8>().unwrap_err());
     }
+
     Ok(result)
 }
 
@@ -124,6 +137,9 @@ trait FromStrRadixHelper:
 {
     const MIN: Self;
     fn from_u64(u: u64) -> Self;
+    fn checked_mul(&self, other: u64) -> Option<Self>;
+    fn checked_sub(&self, other: u64) -> Option<Self>;
+    fn checked_add(&self, other: u64) -> Option<Self>;
 }
 
 /* It doesn't make sence to do parsing with SIMD for those short interger.
@@ -157,6 +173,18 @@ macro_rules! impl_helper_for {
         const MIN: Self = Self::MIN;
         #[inline]
         fn from_u64(u: u64) -> Self { u as Self }
+                #[inline]
+        fn checked_mul(&self, other: u64) -> Option<Self> {
+            Self::checked_mul(*self, other as Self)
+        }
+        #[inline]
+        fn checked_sub(&self, other: u64) -> Option<Self> {
+            Self::checked_sub(*self, other as Self)
+        }
+        #[inline]
+        fn checked_add(&self, other: u64) -> Option<Self> {
+            Self::checked_add(*self, other as Self)
+        }
     })*)
 }
 impl_helper_for! { isize i64 i128 usize u64 u128 }
