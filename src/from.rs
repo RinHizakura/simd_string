@@ -1,43 +1,31 @@
 use crate::align_down;
-use crate::string::SimdString;
 use std::arch::x86_64::*;
 use std::num::ParseIntError;
 use std::ops::{Add, Mul, Sub};
 
-pub trait ToSimdString {
-    fn to_simd_string(&self) -> SimdString;
-}
-
-impl ToSimdString for str {
-    #[inline]
-    fn to_simd_string(&self) -> SimdString {
-        SimdString::from(self)
-    }
-}
-
 pub trait FromSimdString: Sized {
     type Err;
 
-    fn from_str(s: &SimdString) -> Result<Self, Self::Err>;
+    fn from_str(s: &str) -> Result<Self, Self::Err>;
 }
 
-fn from_simd_str_radix<T>(s: &SimdString, radix: u32) -> Result<T, ParseIntError>
+fn from_simd_str_radix<T>(s: &str, radix: u32) -> Result<T, ParseIntError>
 where
     T: FromStrRadixHelper + std::str::FromStr<Err = ParseIntError> + std::fmt::Display,
 {
     //TODO
     assert_eq!(radix, 10);
 
-    let len = s.s.len();
+    let len = s.len();
     /* Use default parse for short string, so some ParseIntError
      * can also be handled there directly.
      *
      * Note: The condition is not "len < 16" because the first character could be sign */
     if len < 17 {
-        return s.s.parse::<T>();
+        return s.parse::<T>();
     }
 
-    let src: &[u8] = s.s.as_bytes();
+    let src: &[u8] = s.as_bytes();
     let is_signed_ty = T::from_u64(0) > T::MIN;
     let (is_positive, src, start) = match src[0] {
         b'+' => (true, &src[1..], 1),
@@ -55,7 +43,7 @@ where
             let mut result1: u64 = 0;
             if len1 > 0 {
                 // Since the source string length of result1 must <= 15, it will suit u64
-                result1 = s.s[start + len0..len].parse::<u64>()?;
+                result1 = s[start + len0..len].parse::<u64>()?;
             }
             let mut result0 = T::from_u64(0);
             unsafe {
@@ -148,8 +136,8 @@ macro_rules! from_str_radix_int_impl_fake {
     ($($t:ty)*) => {$(
         impl FromSimdString for $t {
             type Err = ParseIntError;
-            fn from_str(s: &SimdString) -> Result<Self, ParseIntError> {
-                s.s.parse::<$t>()
+            fn from_str(s: &str) -> Result<Self, ParseIntError> {
+                s.parse::<$t>()
             }
         }
     )*}
@@ -160,7 +148,7 @@ macro_rules! from_str_radix_int_impl {
     ($($t:ty)*) => {$(
         impl FromSimdString for $t {
             type Err = ParseIntError;
-            fn from_str(s: &SimdString) -> Result<Self, ParseIntError> {
+            fn from_str(s: &str) -> Result<Self, ParseIntError> {
                 from_simd_str_radix(s, 10)
             }
         }
