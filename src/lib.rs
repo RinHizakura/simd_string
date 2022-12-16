@@ -1,4 +1,5 @@
 mod from;
+mod pattern;
 mod string;
 
 #[macro_use]
@@ -25,7 +26,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trim_match() {
+    fn test_trim_match_ch() {
         let test_chs = vec!['@', '+'];
         let leading_ch = [0, 1, 15, 16, 17, 23, 24, 25, 31, 32, 33, 100];
 
@@ -33,7 +34,22 @@ mod tests {
             for l in leading_ch {
                 let s = String::from_utf8(vec![ch as u8; l]).unwrap() + "HAPPY";
                 let s1 = s.trim_start_matches(ch).to_string();
-                let s2 = s.simd_trim_start_matches(ch).to_string();
+                let s2 = s.simd_trim_start_matches_ch(ch).to_string();
+                assert_eq!(s1, s2);
+            }
+        }
+    }
+
+    #[test]
+    fn test_trim_match_str() {
+        let test_pattern = vec!["@3@", "==w=="];
+        let leading_p = [0, 1, 15, 16, 17, 23, 24, 25, 31, 32, 33, 100];
+
+        for p in test_pattern {
+            for l in leading_p {
+                let s = p.repeat(l).to_string() + "HAPPY";
+                let s1 = s.trim_start_matches(p).to_string();
+                let s2 = s.simd_trim_start_matches_str(p).to_string();
                 assert_eq!(s1, s2);
             }
         }
