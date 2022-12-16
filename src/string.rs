@@ -6,12 +6,16 @@ use std::arch::x86_64::*;
 /* Reference:
  * - https://lemire.me/blog/2017/01/20/how-quickly-can-you-remove-spaces-from-a-string/
  * - https://vgatherps.github.io/2022-11-28-dec/
+ * - http://0x80.pl/articles/simd-strfind.html
+ * - https://www.strchr.com/strcmp_and_strlen_using_sse_4.2
  * */
 pub trait SimdString {
     /* FIXME: Is it possible to change the type to generic type with trait
      * Pattern implemented? */
     fn simd_trim_start_matches_ch<'a>(&'a self, c: char) -> &'a str;
     fn simd_trim_start_matches_str<'a>(&'a self, s: &str) -> &'a str;
+
+    fn simd_find_ch(&self, c: char) -> Option<usize>;
 
     fn simd_trim_start(&self) -> &str;
     fn simd_parse<F: FromSimdString>(&self) -> Result<F, F::Err>;
@@ -28,13 +32,13 @@ fn simd_trim_start_matches<'a, P: SimdPattern>(s: &'a str, pat: P) -> Option<&'a
             let comp = pat.into_comparator(i);
             let x = _mm_loadu_si128(src.as_ptr().offset(i as isize) as *const _);
 
-            /* Compare each char with space, set bit 1 on the corresponding
+            /* Compare each char with comparator, set bit 1 on the corresponding
              * position if equal. */
             let xcomp = _mm_cmpeq_epi8(x, comp);
             let result = _mm_movemask_epi8(xcomp);
 
             /* The mask 0xffff means that all of the 16 char we have
-             * checked in this turn are space. */
+             * checked in this turn are the same as comparator. */
             if result != 0xffff {
                 pos += (32 - result.leading_zeros()) as usize;
                 return Some(s.get_unchecked(pos..len));
@@ -65,6 +69,31 @@ impl SimdString for str {
         } else {
             self.trim_start_matches(s)
         }
+    }
+
+    fn simd_find_ch<'a>(&'a self, c: char) -> Option<usize> {
+        let len = self.len();
+        let len0 = align_down!(len, 16);
+
+        let src: &[u8] = self.as_bytes();
+        unsafe {
+            for i in (0..len0).step_by(16) {
+                let comp = c.into_comparator(i);
+                let x = _mm_loadu_si128(src.as_ptr().offset(i as isize) as *const _);
+
+                let xcomp = _mm_cmpeq_epi8(x, comp);
+                let result = _mm_movemask_epi8(xcomp);
+
+                if result != 0 {
+                    return Some(i + result.trailing_zeros() as usize);
+                }
+            }
+        }
+
+        if let Some(n) = self[len0..len].find(c) {
+            return Some(len0 + n);
+        }
+        None
     }
 
     fn simd_trim_start(&self) -> &str {

@@ -95,4 +95,23 @@ mod tests {
             assert_eq!(s1, s2);
         }
     }
+
+    #[test]
+    fn test_find_ch() {
+        let test_chs = vec!['@', '+'];
+        let test_strs = [
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "ABCDEF@GHIJK+LMNOPQ@RS@TUVWXYZ",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ@+",
+            "ABC#DEFGHIJKL@@@MNOPQ+RS@TUVWXYZ",
+        ];
+
+        for ch in test_chs {
+            for s in test_strs {
+                let s1 = s.find(ch);
+                let s2 = s.simd_find_ch(ch);
+                assert_eq!(s1, s2);
+            }
+        }
+    }
 }
