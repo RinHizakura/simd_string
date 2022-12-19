@@ -114,4 +114,23 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_find_str() {
+        let test_chs = vec!["HIJK", "WXYZ", "ABCD", "1234"];
+        let test_strs = [
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "ABCDEF@GHIJK+LMNOPQ@RS@TUVWXYZ",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ@+",
+            "ABC#DEFGHIJKL@@@MNOPQ+RS@TUVWXYZ",
+        ];
+
+        for ch in test_chs {
+            for s in test_strs {
+                let s1 = s.find(ch);
+                let s2 = s.simd_find_str(ch);
+                assert_eq!(s1, s2);
+            }
+        }
+    }
 }
