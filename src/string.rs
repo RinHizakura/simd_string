@@ -3,12 +3,6 @@ use crate::from::FromSimdString;
 use crate::pattern::SimdPattern;
 use std::arch::x86_64::*;
 
-/* Reference:
- * - https://lemire.me/blog/2017/01/20/how-quickly-can-you-remove-spaces-from-a-string/
- * - https://vgatherps.github.io/2022-11-28-dec/
- * - http://0x80.pl/articles/simd-strfind.html
- * - https://www.strchr.com/strcmp_and_strlen_using_sse_4.2
- * */
 pub trait SimdString {
     /* FIXME: Is it possible to change the type to generic type with trait
      * Pattern implemented? */
